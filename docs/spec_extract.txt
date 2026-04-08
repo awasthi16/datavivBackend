@@ -1,0 +1,128 @@
+Real-Time Frame-Based Video Streaming System
+ (Comprehensive Spec)
+Objective
+Build a low-latency, frame-addressable video streaming system with synchronized audio, seamless
+looping, and binary command control. The system must support high concurrency, deterministic
+playback, and modular downstream integration without coupling to rendering layers.
+System Principles
+- Frame-level control instead of file playback
+- Continuous streaming (no resets or gaps)
+- Deterministic and command-driven playback
+- Low latency (<500ms)
+- Horizontally scalable and stateless
+Architecture
+Video Input
+↓
+Preprocessing Pipeline
+↓
+Frame + Audio Store
+↓
+Streaming Engine (Scheduler + Loop Engine)
+↓
+STCP Binary Command Layer
+↓
+Mediasoup SFU
+↓
+Client Consumers
+Video Preprocessing
+Input: Standard video formats (MP4, MOV). Output: frame sequences and aligned audio chunks.
+{
+  frames: [F1, F2, ..., Fn],
+  audioChunks: [A1, A2, ...],
+  fps: 30,
+  duration: float
+}
+Requirements:
+- Normalize FPS
+- Assign frame indices
+
+
+- Align timestamps
+- Preload into memory/cache
+Loopable Streaming Engine
+Ensures seamless playback without reset or buffering.
+pointer = (pointer + 1) % totalFrames
+Enhancements: pre-decoding, optional crossfade
+Audio Synchronization
+Maintain continuous playback with tight sync.
+frame.timestamp == audio.timestamp
+Drift handled via frame skipping or audio drop (never pause).
+STCP Binary Command System
+All control must be binary-based.
+PLAY
+PAUSE
+RESUME
+SEEK
+SET_SPEED
+SWITCH_SOURCE
+SET_LOOP_MODE
+SYNC
+Binary Payload
+{
+  action: uint8,
+  streamId: uint8,
+  frameIndex: uint32,
+  timestamp: float,
+  speed: float
+}
+Streaming Layer (Mediasoup)
+- RTP-based streaming
+- Separate audio/video tracks
+- Single producer, multiple consumers
+- Replace frame source dynamically
+
+
+Multi-Stream Switching
+- Instant switching (<100ms)
+- No renegotiation
+- Same transport pipeline
+Core Scheduler
+while (playing):
+    frame = getNextFrame()
+    audio = getAudioChunk()
+    send(frame, audio)
+    sleep(frame_interval)
+State Management (Redis)
+{
+  sessionId,
+  streamId,
+  frameIndex,
+  timestamp,
+  speed,
+  loopMode
+}
+Supports recovery and multi-node sync
+Low Latency Optimization
+- Frame skipping
+- Adaptive FPS
+- Bitrate control
+- Minimal buffering
+High Concurrency Design
+- Mediasoup SFU for distribution
+- Stateless workers
+- Redis-backed coordination
+Ingress → Workers → SFU Cluster
+Integration Interfaces
+Frame interface:
+
+
+onFrame(frame, timestamp)
+onAudio(audioChunk, timestamp)
+Control interface:
+sendCommand(binaryPayload)
+Testing Requirements
+- Seamless loop (no gap)
+- Audio sync (<50ms drift)
+- Switching latency (<100ms)
+- Load stability
+Monitoring Dashboard
+- Active users
+- FPS, bitrate
+- RTT, packet loss
+- Frame drops
+- Command usage
+Deliverables
+- Backend (Node.js + Mediasoup + Redis)
+- Frontend player + dashboard
+- Binary protocol
+- Documentation

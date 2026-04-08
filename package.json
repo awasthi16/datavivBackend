@@ -1,0 +1,22 @@
+{
+  "name": "dataviv-backend",
+  "version": "1.0.0",
+  "description": "Backend service for the DataViv frame streaming engine.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "smoke": "node scripts/smoke.js",
+    "preprocess": "node scripts/preprocess.js"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "ioredis": "^5.4.2",
+    "mediasoup": "^3.15.8",
+    "multer": "^2.0.2"
+  }
+}
