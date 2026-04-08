@@ -1,5 +1,14 @@
 const path = require('node:path');
-require('dotenv').config();
+
+// Load a local .env only during development if one exists.
+// Render and other hosts will rely on real environment variables instead.
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    require('dotenv').config();
+  } catch (_error) {
+    // dotenv is optional for local development.
+  }
+}
 
 module.exports = {
   app: {
