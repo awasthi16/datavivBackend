@@ -2,12 +2,126 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const multer = require('multer');
+const { LOOP_MODES } = require('../constants');
 const { schemaDescription } = require('../protocol/commands');
 
 function createHttpServer(appState, logger) {
   fs.mkdirSync(path.join(appState.storageRoot, 'incoming'), { recursive: true });
   const app = express();
   const upload = multer({ dest: path.join(appState.storageRoot, 'incoming') });
+
+  function getAuthToken(req) {
+    const header = req.headers.authorization || '';
+    if (header.toLowerCase().startsWith('bearer ')) {
+      return header.slice(7).trim();
+    }
+
+    return req.query.token || req.body?.token || null;
+  }
+
+  async function loadSession(req) {
+    if (req.session) {
+      return req.session;
+    }
+
+    const token = getAuthToken(req);
+    if (!token) {
+      return null;
+    }
+
+    const session = await appState.accountStore.getSession(token);
+    if (session) {
+      req.session = session;
+    }
+
+    return session;
+  }
+
+  async function requireAuth(req, res, next) {
+    try {
+      const session = await loadSession(req);
+      if (!session) {
+        res.status(401).json({ ok: false, error: 'Authentication required' });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async function requireAdmin(req, res, next) {
+    try {
+      const session = await loadSession(req);
+      if (!session) {
+        res.status(401).json({ ok: false, error: 'Authentication required' });
+        return;
+      }
+
+      if (session.role !== 'admin') {
+        res.status(403).json({ ok: false, error: 'Admin access required' });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async function ensureViewerSession(req) {
+    const authSession = await loadSession(req);
+    if (!authSession || authSession.role === 'admin') {
+      const error = new Error('Viewer authentication required');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    let viewerSession = await appState.accountStore.getViewerState(authSession.token);
+
+    if (!viewerSession) {
+      viewerSession = await appState.accountStore.saveViewerState(authSession.token, {
+        sessionId: authSession.token,
+        sourceId: appState.activeSource.sourceId,
+        frameIndex: 0,
+        timestamp: 0,
+        playbackSpeed: 1,
+        loopMode: LOOP_MODES.LOOP,
+        playing: false
+      });
+      return viewerSession;
+    }
+
+    if (viewerSession.sourceId !== appState.activeSource.sourceId) {
+      viewerSession = await appState.accountStore.saveViewerState(authSession.token, {
+        ...viewerSession,
+        sourceId: appState.activeSource.sourceId,
+        frameIndex: 0,
+        timestamp: 0,
+        playing: false
+      });
+    }
+
+    return viewerSession;
+  }
+
+  async function updateViewerSession(req, patch) {
+    const authSession = await loadSession(req);
+    if (!authSession || authSession.role === 'admin') {
+      const error = new Error('Viewer authentication required');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const current = await ensureViewerSession(req);
+    const updated = await appState.accountStore.saveViewerState(authSession.token, {
+      ...current,
+      ...patch,
+      sourceId: appState.activeSource.sourceId
+    });
+    return updated;
+  }
 
   app.use((req, res, next) => {
     const origin = appState.corsOrigin;
@@ -57,6 +171,99 @@ function createHttpServer(appState, logger) {
     });
   });
 
+  app.post('/auth/login', async (req, res, next) => {
+    try {
+      const username = String(req.body.username || '').trim();
+      const password = String(req.body.password || '');
+
+      if (
+        username !== appState.auth.adminUsername ||
+        password !== appState.auth.adminPassword
+      ) {
+        res.status(401).json({ ok: false, error: 'Invalid admin credentials' });
+        return;
+      }
+
+      const session = await appState.accountStore.createSession({
+        role: 'admin',
+        username,
+        displayName: 'Administrator'
+      });
+
+      res.json({
+        ok: true,
+        token: session.token,
+        user: session
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/auth/viewer', async (req, res, next) => {
+    try {
+      const displayName = String(req.body.displayName || 'Viewer').trim() || 'Viewer';
+      const session = await appState.accountStore.createSession({
+        role: 'viewer',
+        displayName
+      });
+
+      const viewerSession = await appState.accountStore.saveViewerState(session.token, {
+        sessionId: session.token,
+        sourceId: appState.activeSource.sourceId,
+        frameIndex: 0,
+        timestamp: 0,
+        playbackSpeed: 1,
+        loopMode: LOOP_MODES.LOOP,
+        playing: false
+      });
+
+      res.json({
+        ok: true,
+        token: session.token,
+        user: session,
+        viewerSession
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/auth/me', async (req, res, next) => {
+    try {
+      const session = await loadSession(req);
+
+      if (!session) {
+        res.status(401).json({ ok: false, error: 'Not authenticated' });
+        return;
+      }
+
+      const response = { ok: true, user: session };
+      if (session.role === 'viewer') {
+        response.viewerSession = await ensureViewerSession(req);
+      }
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/auth/logout', async (req, res, next) => {
+    try {
+      const session = await loadSession(req);
+      if (!session) {
+        res.json({ ok: true });
+        return;
+      }
+
+      await appState.accountStore.revokeSession(session.token);
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/schema', (_req, res) => {
     res.json(schemaDescription());
   });
@@ -69,7 +276,7 @@ function createHttpServer(appState, logger) {
     res.json(appState.instantSwitchRtc());
   });
 
-  app.get('/rtc/router-capabilities', (_req, res, next) => {
+  app.get('/rtc/router-capabilities', requireAuth, (_req, res, next) => {
     try {
       const caps = appState.mediasoupManager.getRouterRtpCapabilities();
       if (!caps) {
@@ -84,7 +291,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/rtc/transports', async (_req, res, next) => {
+  app.post('/rtc/transports', requireAuth, async (_req, res, next) => {
     try {
       const transport = await appState.mediasoupManager.createWebRtcTransport();
       res.json({
@@ -98,7 +305,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/rtc/transports/:transportId/connect', async (req, res, next) => {
+  app.post('/rtc/transports/:transportId/connect', requireAuth, async (req, res, next) => {
     try {
       await appState.mediasoupManager.connectTransport(
         req.params.transportId,
@@ -110,7 +317,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/rtc/consume', async (req, res, next) => {
+  app.post('/rtc/consume', requireAuth, async (req, res, next) => {
     try {
       const consumer = await appState.mediasoupManager.consume({
         transportId: req.body.transportId,
@@ -134,7 +341,7 @@ function createHttpServer(appState, logger) {
     res.json(source);
   });
 
-  app.delete('/sources/:sourceId', async (req, res, next) => {
+  app.delete('/sources/:sourceId', requireAdmin, async (req, res, next) => {
     try {
       const sourceId = Number.parseInt(req.params.sourceId, 10);
       const deletingActiveSource = appState.activeSource?.sourceId === sourceId;
@@ -174,7 +381,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.get('/session/:sessionId', async (req, res, next) => {
+  app.get('/session/:sessionId', requireAdmin, async (req, res, next) => {
     try {
       const session = await appState.sessionStore.load(req.params.sessionId);
       res.json(session || { sessionId: req.params.sessionId, missing: true });
@@ -203,7 +410,7 @@ function createHttpServer(appState, logger) {
     });
   });
 
-  app.post('/session/:sessionId/play', async (req, res, next) => {
+  app.post('/session/:sessionId/play', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'PLAY',
@@ -219,7 +426,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/pause', async (req, res, next) => {
+  app.post('/session/:sessionId/pause', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'PAUSE',
@@ -235,7 +442,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/resume', async (req, res, next) => {
+  app.post('/session/:sessionId/resume', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'RESUME',
@@ -251,7 +458,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/seek', async (req, res, next) => {
+  app.post('/session/:sessionId/seek', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'SEEK',
@@ -267,7 +474,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/speed', async (req, res, next) => {
+  app.post('/session/:sessionId/speed', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'SET_SPEED',
@@ -283,7 +490,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/switch/:sourceId', async (req, res, next) => {
+  app.post('/session/:sessionId/switch/:sourceId', requireAdmin, async (req, res, next) => {
     try {
       getSourceOrThrow(Number.parseInt(req.params.sourceId, 10));
       await appState.handleControl({
@@ -300,7 +507,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/loop-mode', async (req, res, next) => {
+  app.post('/session/:sessionId/loop-mode', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'SET_LOOP_MODE',
@@ -316,7 +523,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/session/:sessionId/sync', async (req, res, next) => {
+  app.post('/session/:sessionId/sync', requireAdmin, async (req, res, next) => {
     try {
       await appState.handleControl({
         actionName: 'SYNC',
@@ -332,7 +539,91 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/preprocess', async (req, res, next) => {
+  app.get('/viewer/session', requireAuth, async (req, res, next) => {
+    try {
+      const session = await ensureViewerSession(req);
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/play', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, {
+        playing: true,
+        timestamp: Number.parseFloat(req.body.timestamp ?? 0)
+      });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/pause', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, { playing: false });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/resume', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, { playing: true });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/seek', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, {
+        frameIndex: Number.parseInt(req.body.frameIndex ?? 0, 10),
+        timestamp: Number.parseFloat(req.body.timestamp ?? 0)
+      });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/speed', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, {
+        playbackSpeed: Number.parseFloat(req.body.speed ?? 1)
+      });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/loop-mode', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, {
+        loopMode: Number.parseInt(req.body.loopMode ?? LOOP_MODES.LOOP, 10)
+      });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/viewer/session/sync', requireAuth, async (req, res, next) => {
+    try {
+      const session = await updateViewerSession(req, {
+        timestamp: Number.parseFloat(req.body.timestamp ?? 0)
+      });
+      res.json({ ok: true, session });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/preprocess', requireAdmin, async (req, res, next) => {
     try {
       const sourceId = Number.parseInt(req.body.sourceId, 10);
       const manifest = await appState.preprocessor.preprocess({
@@ -347,7 +638,7 @@ function createHttpServer(appState, logger) {
     }
   });
 
-  app.post('/upload-source', upload.single('video'), async (req, res, next) => {
+  app.post('/upload-source', requireAdmin, upload.single('video'), async (req, res, next) => {
     try {
       if (!req.file) {
         const error = new Error('No video file uploaded');

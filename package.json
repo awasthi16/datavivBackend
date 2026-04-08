@@ -17,6 +17,7 @@
     "express": "^4.21.2",
     "ioredis": "^5.4.2",
     "mediasoup": "^3.15.8",
+    "mongodb": "^6.19.0",
     "multer": "^2.0.2"
   }
 }

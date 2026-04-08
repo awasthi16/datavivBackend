@@ -7,6 +7,7 @@ const { SourceRegistry } = require('./media/sourceRegistry');
 const { getFramePair } = require('./media/frameTimeline');
 const { MediaPreprocessor } = require('./media/preprocessor');
 const { SessionStore } = require('./state/sessionStore');
+const { AccountStore } = require('./state/accountStore');
 const { SchedulerEngine } = require('./scheduler/SchedulerEngine');
 const { MediasoupManager } = require('./rtc/mediasoupManager');
 const { StcpServer, toSchedulerCommand } = require('./control/stcpServer');
@@ -41,6 +42,16 @@ async function main() {
   );
   await sessionStore.connect();
 
+  const accountStore = new AccountStore(
+    {
+      mongoUrl: config.mongo.uri,
+      dbName: config.mongo.dbName,
+      fallbackDir: config.storage.rootDir
+    },
+    logger
+  );
+  await accountStore.connect();
+
   const sessionId = 'default';
   const restoredState =
     (await sessionStore.load(sessionId)) || {
@@ -59,9 +70,11 @@ async function main() {
   const appState = {
     targetLatencyMs: config.runtime.targetLatencyMs,
     corsOrigin: config.app.corsOrigin,
+    auth: config.auth,
     storageRoot: config.storage.rootDir,
     publicRoot: path.join(__dirname, '..', '..', 'frontend', 'dist'),
     preprocessor,
+    accountStore,
     metrics,
     integrationBus,
     sseClients: new Set(),
@@ -231,6 +244,7 @@ async function main() {
     await scheduler.stop();
     await stcpServer.stop();
     await sessionStore.disconnect();
+    await accountStore.disconnect();
     httpServer.close();
     process.exit(0);
   };

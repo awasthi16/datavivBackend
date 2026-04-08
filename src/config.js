@@ -15,7 +15,16 @@ module.exports = {
     port: Number.parseInt(process.env.PORT || '8080', 10),
     controlPort: Number.parseInt(process.env.CONTROL_PORT || '9000', 10),
     logLevel: process.env.LOG_LEVEL || 'info',
-    corsOrigin: process.env.CORS_ORIGIN || '*'
+    corsOrigin: process.env.CORS_ORIGIN || '*',
+    adminKey: process.env.ADMIN_KEY || 'dataviv-admin'
+  },
+  auth: {
+    adminUsername: process.env.ADMIN_USERNAME || 'admin',
+    adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
+  },
+  mongo: {
+    uri: process.env.MONGODB_URI || '',
+    dbName: process.env.MONGODB_DB || 'dataviv'
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'

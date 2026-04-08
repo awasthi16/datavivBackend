@@ -113,6 +113,14 @@ Important limitation:
 - it is not a good fit for the full live WebRTC/UDP mediasoup path
 - if you need actual streaming transport, you will likely need a host that allows the required UDP port range and long-lived media connections
 
+## Auth And Viewer Sessions
+
+- `POST /auth/login` signs in the admin user using `ADMIN_USERNAME` and `ADMIN_PASSWORD`
+- `POST /auth/viewer` creates a viewer session and stores its state in MongoDB when `MONGODB_URI` is set
+- `GET /viewer/session` returns the current viewer playback state
+- `POST /viewer/session/*` updates only that viewer's local session, so multiple viewers do not affect each other
+- `POST /upload-source`, `POST /preprocess`, `DELETE /sources/:sourceId`, and the `/session/default/*` broadcast controls are admin-only
+
 ## HTTP API
 
 - `GET /health`
