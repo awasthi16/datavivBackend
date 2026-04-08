@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: dataviv-backend
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MEDIASOUP_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_URL
+        sync: false

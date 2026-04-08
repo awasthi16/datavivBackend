@@ -95,6 +95,23 @@ cd ../backend
 npm run preprocess -- "C:\\videos\\sample.mp4" 101 "Sample Source"
 ```
 
+## Deploying on Render
+
+This backend can be deployed as a Render web service using the included [render.yaml](/c:/Users/HP/OneDrive/Desktop/dataviv/backend/render.yaml).
+
+Recommended setup for the free tier:
+
+- use `npm ci` for build
+- use `npm start` for the web process
+- keep `MEDIASOUP_ENABLED=false`
+- provide `REDIS_URL` only if you have an external Redis instance
+
+Important limitation:
+
+- the free Render web service is fine for the HTTP API, dashboard, and SSE
+- it is not a good fit for the full live WebRTC/UDP mediasoup path
+- if you need actual streaming transport, you will likely need a host that allows the required UDP port range and long-lived media connections
+
 ## HTTP API
 
 - `GET /health`
