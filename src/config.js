@@ -14,7 +14,8 @@ module.exports = {
   app: {
     port: Number.parseInt(process.env.PORT || '8080', 10),
     controlPort: Number.parseInt(process.env.CONTROL_PORT || '9000', 10),
-    logLevel: process.env.LOG_LEVEL || 'info'
+    logLevel: process.env.LOG_LEVEL || 'info',
+    corsOrigin: process.env.CORS_ORIGIN || '*'
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'

@@ -8,6 +8,29 @@ function createHttpServer(appState, logger) {
   fs.mkdirSync(path.join(appState.storageRoot, 'incoming'), { recursive: true });
   const app = express();
   const upload = multer({ dest: path.join(appState.storageRoot, 'incoming') });
+
+  app.use((req, res, next) => {
+    const origin = appState.corsOrigin;
+
+    if (origin === '*') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (req.headers.origin === origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  });
+
   app.use(express.json());
   app.use('/storage', express.static(appState.storageRoot));
   app.use(express.static(appState.publicRoot));

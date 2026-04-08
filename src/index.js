@@ -58,6 +58,7 @@ async function main() {
 
   const appState = {
     targetLatencyMs: config.runtime.targetLatencyMs,
+    corsOrigin: config.app.corsOrigin,
     storageRoot: config.storage.rootDir,
     publicRoot: path.join(__dirname, '..', '..', 'frontend', 'dist'),
     preprocessor,

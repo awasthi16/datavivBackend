@@ -105,6 +105,7 @@ Recommended setup for the free tier:
 - use `npm start` for the web process
 - keep `MEDIASOUP_ENABLED=false`
 - provide `REDIS_URL` only if you have an external Redis instance
+- set `CORS_ORIGIN` to your frontend URL if the frontend is hosted elsewhere
 
 Important limitation:
 
