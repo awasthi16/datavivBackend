@@ -16,6 +16,6 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: CORS_ORIGIN
-        sync: false
+        value: https://dataviv-frontend.vercel.app
       - key: REDIS_URL
         sync: false
