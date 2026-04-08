@@ -23,7 +23,7 @@ module.exports = {
     adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
   },
   mongo: {
-    uri: process.env.MONGODB_URI || '',
+    uri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017',
     dbName: process.env.MONGODB_DB || 'dataviv'
   },
   redis: {
